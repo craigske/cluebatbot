@@ -202,7 +202,7 @@ func main() {
 		syscall.SIGQUIT)
 
 	// //slack integration
-	// slackAPI := slack.New("xoxb-274713070916-G2mo9Ts9Z2gotzEB94XmRp31")
+	// slackAPI := slack.New("apikey")
 
 	// //check slack
 	// authTest, err := slackAPI.AuthTest()
