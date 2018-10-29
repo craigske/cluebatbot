@@ -1,0 +1,14 @@
+[
+    { 
+        "name": "server1",
+        "APIKey": "1asdasdasd-asdasdasd-asdasdasd",
+        "CluebatBotChan": "D11111111",
+        "OwnerID": "U11111111"
+    },
+    { 
+        "name": "server2",
+        "APIKey": "2asdasdasd-asdasdasd-asdasdasd",
+        "CluebatBotChan": "D222222",
+        "OwnerID": "U22222222"
+    }   
+]
