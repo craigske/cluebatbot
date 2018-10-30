@@ -29,7 +29,7 @@ func (s *ItemRefStack) Push(v slack.ItemRef) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	if *debugCSlack {
-		log.Printf("ItemRefStack pushed: %s %s", v.Timestamp, v.Comment)
+		log.Printf("ItemRefStack pushed: %v", v)
 	}
 	s.s = append(s.s, v)
 }
@@ -46,7 +46,7 @@ func (s *ItemRefStack) Pop() (slack.ItemRef, error) {
 	}
 
 	if *debugCSlack {
-		log.Println("ItemRefStack popped: ", s.s[l-1])
+		log.Printf("ItemRefStack popped: %v", s.s[l-1])
 	}
 
 	res := s.s[l-1]

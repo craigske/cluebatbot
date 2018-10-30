@@ -2,9 +2,12 @@ package cslack
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
+	"strconv"
 
+	"../redis"
 	"github.com/nlopes/slack"
 )
 
@@ -113,30 +116,88 @@ var debugCSlack = flag.Bool("debugCSlack", true, "enable or disable debug in csl
 
 // SlackServerManager is the entry point to the cslack lib
 func SlackServerManager(slackAPI *slack.Client, server SlackServer, myID string, myTeamID string) {
-	rtm := slackAPI.NewRTM()
-	go rtm.ManageConnection()
-	msgStack := NewItemRefStack()
-	for msg := range rtm.IncomingEvents {
-		handleSlackEvents(msg, *rtm, *slackAPI, server, msgStack)
-	}
 	debugText := os.Getenv("CSLACK_DEBUG")
 	if debugText == "true" {
 		log.Print("cslack debug on")
 		*debugCSlack = true
 	}
+
+	rtm := slackAPI.NewRTM()
+	go rtm.ManageConnection()
+
+	// store all the channels and users on startup
+	getSlackUsers(slackAPI, server)
+	getSlackChannels(slackAPI, server)
+
+	msgStack := NewItemRefStack()
+	for msg := range rtm.IncomingEvents {
+		handleSlackEvents(msg, *rtm, *slackAPI, server, msgStack)
+	}
+}
+
+func getSlackUsers(slackAPI *slack.Client, server SlackServer) {
+	var counter int
+	users, err := slackAPI.GetUsers()
+	if err != nil {
+		log.Println("Error initializing slack users")
+	}
+	// prints the range of users we just snarfed
+	for index, user := range users {
+		counter++
+		if *debugCSlack {
+			log.Println(server.Name + " found " + strconv.Itoa(index) + " is " + user.ID + " name:" + user.Name + " realname: " + user.Profile.RealName + " email: " + user.Profile.Email)
+			//log.Printf("%d - %+v\n", index, user)
+		}
+		// Already in redis?
+		exists, err := redis.Exists(server.Name + "-user-" + user.ID)
+		if err != nil {
+			log.Printf("%s redis Exists Err", server.Name)
+		}
+		if !exists {
+			stringUser := fmt.Sprintf("%#v", user)
+			redis.Set(server.Name+"-user-"+user.ID, []byte(stringUser))
+		}
+	}
+	log.Printf("added %d users\n", counter)
+}
+
+func getSlackChannels(slackAPI *slack.Client, server SlackServer) {
+	var counter int
+	channels, err := slackAPI.GetChannels(false)
+	if err != nil {
+		log.Printf("%s\n", err)
+		return
+	}
+	for index, channel := range channels {
+		counter++
+		if *debugCSlack {
+			log.Println(server.Name + " found " + strconv.Itoa(index) + " is " + channel.ID + " name:" + channel.Name)
+			//log.Printf("%d - %+v\n", index, user)
+		}
+		// Already in redis?
+		exists, err := redis.Exists(server.Name + "-channel-" + channel.ID)
+		if err != nil {
+			log.Printf("%s redis Exists Err", server.Name)
+		}
+		if !exists {
+			stringChannel := fmt.Sprintf("%#v", channel)
+			redis.Set(server.Name+"-channel-"+channel.ID, []byte(stringChannel))
+		}
+	}
+	log.Printf("added %d channels\n", counter)
 }
 
 func handleSlackEvents(msg slack.RTMEvent, rtm slack.RTM, slackAPI slack.Client, server SlackServer, msgStack *ItemRefStack) {
 	if *debugCSlack {
-		log.Print("cslack debug on")
+		log.Printf("%s cslack debug on", server.Name)
 	}
 	switch ev := msg.Data.(type) {
 	case *slack.HelloEvent:
 		// Ignore hello
 	case *slack.ConnectedEvent:
 		if *debugCSlack {
-			log.Print("Event info:", ev.Info)
-			log.Print("Connection counter:", ev.ConnectionCount)
+			log.Printf("%s Event info: %v", server.Name, ev.Info)
+			log.Printf("%s Connection counter: %v", server.Name, ev.ConnectionCount)
 		}
 		rtm.SendMessage(rtm.NewOutgoingMessage("ClueBatBot Connected!", server.CluebatBotChan))
 	case *slack.MessageEvent:
@@ -144,41 +205,40 @@ func handleSlackEvents(msg slack.RTMEvent, rtm slack.RTM, slackAPI slack.Client,
 		found, err := msgStack.Search(msg.Channel, msg.Timestamp)
 		if err != nil {
 			if *debugCSlack {
-				log.Printf("%s\n", err)
+				log.Printf("%s message stack search error %s\n", server.Name, err)
 			}
 		}
 		if found {
 			if *debugCSlack {
-				log.Println(server.Name, " GOT MY OWN MESSAGE")
+				log.Printf("%s found my own message in the stack", server.Name)
 			}
 		} else {
-			HandleSlackMessageEvent(*ev, rtm, slackAPI)
+			HandleSlackMessageEvent(*ev, rtm, slackAPI, server, msgStack)
 		}
-		msgStack.Push(slack.NewRefToMessage(ev.Channel, ev.Timestamp))
 	case *slack.PresenceChangeEvent:
 		if *debugCSlack {
-			log.Printf("Presence Change: %v\n", ev)
+			log.Printf("%s got presence Change: %v\n", server.Name, ev)
 		}
 	case *slack.LatencyReport:
 		if *debugCSlack {
-			log.Printf("Current latency: %v\n", ev.Value)
+			log.Printf("%s current latency: %v\n", server.Name, ev.Value)
 		}
 	case *slack.RTMError:
 		if *debugCSlack {
-			log.Printf("Slack RTM Error: %s\n", ev.Error())
+			log.Printf("%s got slack RTM Error: %s\n", server.Name, ev.Error())
 		}
 	case *slack.InvalidAuthEvent:
 		if *debugCSlack {
-			log.Fatalln("Invalid credentials for ", server.Name)
+			log.Fatalf("%s failed due to invalid credentials", server.Name)
 		}
 	case *slack.UserChangeEvent:
 		if *debugCSlack {
-			log.Printf("Slack User change event for %s who is %s", ev.User.ID, ev.User.Name)
+			log.Printf("%s got slack User change event for %s who is %s", server.Name, ev.User.ID, ev.User.Name)
 		}
 	default:
 		// Ignore other events..
 		if *debugCSlack {
-			log.Printf("Unhandled event in cslack: %v\n", msg.Data)
+			log.Printf("%s found an unhandled event %v\n", server.Name, msg.Data)
 		}
 	}
 }
