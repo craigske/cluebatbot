@@ -3,7 +3,9 @@ package cslack
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/nlopes/slack"
 )
@@ -31,9 +33,12 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 	case "ping":
 		if *debugCSlack {
 			log.Println(server.Name + " someone " + ev.Name + " pinged me bro " + ev.Type)
-			sendSlackMessage("pong", ev.Channel, slackAPI, server, msgStack)
+			channelID, _, err := sendSlackMessage(ev, "pong", ev.Channel, slackAPI, server, msgStack)
+			if err != nil {
+				log.Printf("%s got error: \"%s\" sending to %s", server.Name, err, channelID)
+			}
 		}
-	case "clue":
+	case "bat":
 		if *debugCSlack {
 			log.Printf("%s got clue for %s\ncmd: %s object: %s predicate: %s", server.Name, tehmsgTokens[1], cmd, object, predicate)
 			//apply security
@@ -45,32 +50,85 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 			//user, err := slackAPI.GetUserInfo(object)
 			userString := strings.Trim(object, "<@")
 			userString = strings.Trim(userString, ">")
-			_, err := slackAPI.GetUserInfo(userString)
+			user, err := slackAPI.GetUserInfo(userString)
 			if err != nil {
 				log.Printf("%s error for user %s lookup %s", server.Name, userString, err)
 				//return
 			}
-			// select a random channel that the user is in
-			channels, err := slackAPI.GetChannels(false)
+			// TODO: conversations is what we want here
+			var cursor string
+			params := slack.GetConversationsForUserParameters{UserID: userString, Cursor: cursor, Types: []string{"public_channel", "private_channel"}, Limit: 100}
+			members, cursor, err := slackAPI.GetConversationsForUser(&params)
 			if err != nil {
-				fmt.Printf("%s\n", err)
+				log.Printf("%s error getting conversations for %s was %s", server.Name, userString, err)
 				return
 			}
-			// TODO: conversations is what we want here
+			if len(members) == 0 {
+				log.Printf("%s %s has no conversations I can find. Harassment failure", server.Name, userString)
+				return
+			}
 
-			for _, channel := range channels {
-				for _, member := range channel.Members {
-					if member == userString {
-						log.Printf("%s - %s is a member of %s\n", server.Name, userString, channel.Name)
-					} else {
-						log.Printf("%s %s is not %s", server.Name, userString, member)
+			//join random channel
+			r := rand.New(rand.NewSource(time.Now().UnixNano() * 99)) // random seed + salt is probably enough :)
+			randomChannelIndex := r.Intn((len(members) - 1))
+			for i, member := range members {
+				if *debugCSlack {
+					log.Printf("%s %d member %v", server.Name, i, member)
+				}
+				if randomChannelIndex == i && (member.Name != "announcements") {
+					if *debugCSlack {
+						log.Printf("%s found %s to harass %s in", server.Name, member.ID, userString)
+					}
+					_, err := slackAPI.JoinChannel(member.Name)
+					if err != nil {
+						log.Printf("%s error joining channel %s to harass user %s: %s", server.Name, member.Name, userString, err)
+						//return
+					}
+					//send message to random channel
+					_, timestamp, err := sendSlackMessage(ev, clueBatMessage(*user, ""), member.ID, slackAPI, server, msgStack)
+					if err != nil {
+						log.Printf("%s error harassing %s in random channel %s - %s: %s", server.Name, userString, member.ID, member.Name, err)
+					}
+					msg := fmt.Sprintf("sent <@%s> a cluebat message in <#%s> at %s\n If you join right away, they'll totally know it was you. <GRIN>", user.ID, member.ID, timestamp)
+					_, _, err = sendSlackMessage(ev, msg, ev.Channel, slackAPI, server, msgStack)
+					if err != nil {
+						log.Printf("%s error harassing %s in random channel %s - %s: %s", server.Name, userString, member.ID, member.Name, err)
+					}
+					//leave random channel
+					_, err = slackAPI.LeaveChannel(member.Name)
+					if err != nil {
+						log.Printf("%s error leaving channel %s - %s while harassing %s: %s", server.Name, member.ID, member.Name, userString, err)
 					}
 				}
 			}
-			//join random channel
-			//send message to random channel
-			//leave random channel
 		}
+	case "help":
+		useage := "send a message to cluebatbot in any channel (or by DM, hint hint) of the form `bat @user`.\nCluebatbot will find a random channel then hit @user with a cluebat in it. @user will never see it coming"
+		_, _, err := sendSlackMessage(ev, useage, ev.Channel, slackAPI, server, msgStack)
+		if err != nil {
+			log.Printf("%s error sending help in channel %s", server.Name, ev.Channel)
+		}
+	case "img":
+		attachment := slack.Attachment{
+			Pretext: "ClueBatBot engage!",
+			Text:    "I'm gonna bat you a clue",
+			Fields: []slack.AttachmentField{
+				slack.AttachmentField{
+					Title: "cluebat",
+					Value: "a cluebat for you",
+				},
+			},
+			ImageURL: "http://austenblog.files.wordpress.com/2009/04/mycluebat.jpg",
+		}
+		msgOptionAttachments := slack.MsgOptionAttachments(attachment)
+		channelID, timestamp, err := slackAPI.PostMessage(ev.Channel, msgOptionAttachments, slack.MsgOptionText("", false))
+		if err != nil {
+			log.Printf("%s error sending to %s is %s\n", server.Name, ev.Channel, err)
+		}
+		if *debugCSlack {
+			log.Printf("%s sent img attachment to channelID: %s at %s", server, channelID, timestamp)
+		}
+		msgStack.Push(slack.NewRefToMessage(channelID, timestamp))
 	case "die":
 		if *debugCSlack {
 			log.Fatalln(server.Name + " got die")
@@ -82,13 +140,38 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 	}
 }
 
-func sendSlackMessage(msg string, chanFrom string, slackAPI slack.Client, server SlackServer, msgStack *ItemRefStack) {
-	channelID, timestamp, err := slackAPI.PostMessage(chanFrom, slack.MsgOptionText(msg, false))
+func sendSlackMessage(ev slack.MessageEvent, msg string, chanTo string, slackAPI slack.Client, server SlackServer, msgStack *ItemRefStack) (string, string, error) {
+	params := slack.PostMessageParameters{}
+	params.Channel = chanTo
+	params.User = botID
+	// params.AsUser = true
+	params.IconURL = "https://avatars.slack-edge.com/2018-10-30/468904459303_65c7fc492ecc467edcbe_192.jpg"
+	params.Username = "ClueBatBot"
+	params.Markdown = true
+	params.UnfurlLinks = true
+	// attachment := slack.Attachment{
+	// 	Text: msg,
+	// }
+	// params.Attachments = []slack.Attachment{attachment}
+	channelID, timestamp, err := slackAPI.PostMessage(chanTo, slack.MsgOptionText(msg, false), slack.MsgOptionPostMessageParameters(params))
 	if err != nil {
-		log.Printf("%s\n", err)
+		log.Printf("%s error sending to %s is %s with params: %v\n", server.Name, chanTo, err, params)
 	}
 	if *debugCSlack {
 		log.Printf("%s sent %s to channelID: %s at %s", server, msg, channelID, timestamp)
 	}
 	msgStack.Push(slack.NewRefToMessage(channelID, timestamp))
+	return channelID, timestamp, err
+}
+
+// TODO: name if non-anonymous. Anon for now
+func clueBatMessage(target slack.User, name string) string {
+	var messages []string
+	messages = append(messages, fmt.Sprintf("<@%s> you've been hit with a cluebat, peon", target.ID))
+	messages = append(messages, fmt.Sprintf("WHAM. <@%s>, you've been nailed with the cluebat. Hopefully it left a lasting impression", target.ID))
+	messages = append(messages, fmt.Sprintf("SHWOK. <@%s>, you've been beaned in the noggin with the cluebat. Hopefully it imparted clue", target.ID))
+	messages = append(messages, fmt.Sprintf("THWACK. <@%s>, you've been hit with the cluebat. Clue imprint attempted", target.ID))
+	r := rand.New(rand.NewSource(time.Now().UnixNano() * 99)) // random seed + salt is probably enough :)
+	randomChannelIndex := r.Intn((len(messages) - 1))
+	return messages[randomChannelIndex]
 }

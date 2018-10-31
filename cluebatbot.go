@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math/rand"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
-	"time"
 
 	"./cslack"
 	"./redis"
@@ -50,9 +48,6 @@ var slackServers []cslack.SlackServer
 func init() {
 	au = aurora.NewAurora(*colors)
 	fmt.Println("init.....", au.Magenta("Aurora"))
-
-	// the randoms
-	rand.Seed(time.Now().UnixNano())
 
 	writeConfig := os.Getenv("WRITE_EXAMPLE_CONFIG")
 	if writeConfig == "true" {
