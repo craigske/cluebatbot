@@ -1,0 +1,45 @@
+---
+apiVersion: "v1"
+kind: "Namespace"
+metadata:
+  name: "cluebatbot"
+---
+apiVersion: "extensions/v1beta1"
+kind: "Deployment"
+metadata:
+  name: "cluebatbot"
+  namespace: "cluebatbot"
+  labels:
+    app: "cluebatbot"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: "cluebatbot"
+  template:
+    metadata:
+      labels:
+        app: "cluebatbot"
+    spec:
+      containers:
+      - name: "cluebatbot"
+        image: "gcr.io/craigskelton-com/cluebatbot:latest"
+        env:
+        - name: "REDIS_HOST"
+          value: 'redis.dorkbot.svc.cluster.local:6379'
+---
+apiVersion: "autoscaling/v1"
+kind: "HorizontalPodAutoscaler"
+metadata:
+  name: "cluebatbot-hpa"
+  namespace: "cluebatbot"
+  labels:
+    app: "cluebatbot"
+spec:
+  scaleTargetRef:
+    kind: "Deployment"
+    name: "cluebatbot"
+    apiVersion: "apps/v1beta1"
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilizationPercentage: 80
