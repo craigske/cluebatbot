@@ -20,7 +20,7 @@ type SlackServer struct {
 }
 
 var (
-	debugCSlack = flag.Bool("debugCSlack", true, "enable or disable debug in cslack")
+	debugCSlack = flag.Bool("debugCSlack", false, "enable or disable debug in cslack")
 	botID       string
 )
 

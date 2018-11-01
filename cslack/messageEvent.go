@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,7 +90,12 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 					if err != nil {
 						log.Printf("%s error harassing %s in random channel %s - %s: %s", server.Name, userString, member.ID, member.Name, err)
 					}
-					msg := fmt.Sprintf("sent <@%s> a cluebat message in <#%s> at %s\n If you join right away, they'll totally know it was you. <GRIN>", user.ID, member.ID, timestamp)
+					timeInSeconds, err := strconv.ParseInt(timestamp, 10, 64)
+					if err != nil {
+						log.Printf("%s error converting %s to int for time conversion. Setting time to Time.now(). Will be wrong. Err is %s", server.Name, timestamp, err)
+					}
+					timeFromUnix := time.Unix(timeInSeconds, 0)
+					msg := fmt.Sprintf("sent <@%s> a cluebat message in <#%s> at %s\n If you join right away, they'll totally know it was you. <GRIN>", user.ID, member.ID, timeFromUnix.String())
 					_, _, err = sendSlackMessage(ev, msg, ev.Channel, slackAPI, server, msgStack)
 					if err != nil {
 						log.Printf("%s error harassing %s in random channel %s - %s: %s", server.Name, userString, member.ID, member.Name, err)
@@ -99,6 +105,8 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 					if err != nil {
 						log.Printf("%s error leaving channel %s - %s while harassing %s: %s", server.Name, member.ID, member.Name, userString, err)
 					}
+					log.Printf("A cluebat was sent on %s to %s by %s in %s at %s",
+						server.Name, user.Name, ev.Name, member.Name, timeFromUnix.String())
 				}
 			}
 		}
