@@ -28,7 +28,23 @@ spec:
         - name: "REDIS_HOST"
           value: 'redis.dorkbot.svc.cluster.local:6379'
         - name: "CSLACK_DEBUG"
-          value: 'false'
+          value: 'true'
+        - name: MY_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: MY_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: MY_POD_SERVICE_ACCOUNT
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.serviceAccountName
 ---
 apiVersion: "autoscaling/v1"
 kind: "HorizontalPodAutoscaler"
@@ -42,6 +58,6 @@ spec:
     kind: "Deployment"
     name: "cluebatbot"
     apiVersion: "apps/v1beta1"
-  minReplicas: 1
-  maxReplicas: 1
+  minReplicas: 3
+  maxReplicas: 3
   targetCPUUtilizationPercentage: 80

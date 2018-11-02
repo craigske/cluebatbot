@@ -28,7 +28,7 @@ var (
 func SlackServerManager(slackAPI *slack.Client, server SlackServer, myID string, myTeamID string) {
 	debugText := os.Getenv("CSLACK_DEBUG")
 	if debugText == "true" {
-		log.Print("cslack debug on")
+		log.Printf("init %s cslack debug on", server.Name)
 		*debugCSlack = true
 	}
 
@@ -43,6 +43,9 @@ func SlackServerManager(slackAPI *slack.Client, server SlackServer, myID string,
 	// stack of messages for the win...
 	msgStack := NewItemRefStack()
 	for msg := range rtm.IncomingEvents {
+		// if debugText == "true" {
+		// 	log.Printf("%s got event type %v with data %v", server.Name, msg.Type, msg.Data)
+		// }
 		handleSlackEvents(msg, *rtm, *slackAPI, server, msgStack)
 	}
 }

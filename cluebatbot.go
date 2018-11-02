@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"./cslack"
 	"./redis"
@@ -44,15 +45,26 @@ var tickCounter = 0
 var users Users
 var channels Channels
 var slackServers []cslack.SlackServer
+var podID string
+var podName string
 
 func init() {
 	au = aurora.NewAurora(*colors)
-	fmt.Println("init.....", au.Magenta("Aurora"))
+	fmt.Println("INIT ClueBatBot")
 
 	writeConfig := os.Getenv("WRITE_EXAMPLE_CONFIG")
 	if writeConfig == "true" {
 		writeExampleCredsFile()
 		log.Fatalln("Wrote example config. Unset WRITE_EXAMPLE_CONFIG to stop doing this.")
+	}
+
+	podID = os.Getenv("MY_POD_IP")
+	if podID == "" {
+		podID = string(os.Getpid())
+	}
+	podName = os.Getenv("MY_POD_NAME")
+	if podName == "" {
+		podName = string(os.Getpid())
 	}
 
 	readCredsFile() // TODO: refactor to some config system
@@ -79,27 +91,50 @@ func main() {
 		syscall.SIGTERM,
 		syscall.SIGQUIT)
 
-	// initialize a slack server chan for each server
-	for _, server := range slackServers {
-		if *debug {
-			log.Printf("Creating server named %s \n", server.Name)
+	// am i master or hot spare?
+	for {
+		if amIMaster() {
+			// initialize a slack server chan for each server
+			for _, server := range slackServers {
+				if *debug {
+					log.Printf("Creating server named %s \n", server.Name)
+				}
+				currentSlackAPI := slack.New(server.APIKey)
+				authTest, err := currentSlackAPI.AuthTest()
+				if err != nil {
+					fmt.Printf("Error in auth: %s\n", err)
+					return
+				}
+				// start the server manager
+				go cslack.SlackServerManager(currentSlackAPI, server, authTest.UserID, authTest.TeamID)
+			}
+			code := <-stopChan
+			sigInt, err := strconv.Atoi(code.String())
+			if err != nil {
+				log.Println(au.Red("Err getting the singal int value"))
+			}
+			log.Println(au.Green("Stopping cluebatbot"))
+			redis.Delete("cluster-id-master")
+			os.Exit(sigInt)
+		} else {
+			log.Printf("I %s am not master, waiting...", podID+podName)
+			time.Sleep(time.Minute)
 		}
-		currentSlackAPI := slack.New(server.APIKey)
-		authTest, err := currentSlackAPI.AuthTest()
-		if err != nil {
-			fmt.Printf("Error getting channels: %s\n", err)
-			return
-		}
-		// start the server manager
-		go cslack.SlackServerManager(currentSlackAPI, server, authTest.UserID, authTest.TeamID)
 	}
+}
 
-	code := <-stopChan
-	sigInt, err := strconv.Atoi(code.String())
+func amIMaster() bool {
+	myID := podID + podName
+	master, err := redis.Get("cluster-id-master")
 	if err != nil {
-		log.Println(au.Red("Err getting the singal int value"))
+		log.Printf("amIMaster redis Exists Err: %v", err)
 	}
-	os.Exit(sigInt)
+	if string(master) != myID {
+		log.Printf("I %s am master", myID)
+		redis.Set("cluster-id-master", []byte(myID))
+		return true
+	}
+	return false
 }
 
 func readCredsFile() {
@@ -113,7 +148,7 @@ func readCredsFile() {
 		die("failed read slack sever json", err)
 	}
 	if *debug {
-		log.Println(fmt.Sprintf("SlackServers Structs: %#v", slackServers))
+		log.Println(fmt.Sprintf("SlackServers Structs: \n%#v", slackServers))
 	}
 
 }
