@@ -15,6 +15,7 @@ import (
 
 	"./cslack"
 	"./redis"
+	"github.com/golang/glog"
 	"github.com/logrusorgru/aurora"
 	"github.com/nlopes/slack"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,13 +58,14 @@ var runningInK8s bool
 var nodeName string
 
 func init() {
-	fmt.Println("INIT ClueBatBot")
-	au = aurora.NewAurora(*colors)
+	flag.Parse()
+	flag.Lookup("logtostderr").Value.Set("true")
+	glog.Infoln("INIT ClueBatBot")
 
 	writeConfig := os.Getenv("WRITE_EXAMPLE_CONFIG")
 	if writeConfig == "true" {
 		writeExampleCredsFile()
-		log.Fatalln("Wrote example config. Unset WRITE_EXAMPLE_CONFIG to stop doing this.")
+		glog.Fatalln("Wrote example config. Unset WRITE_EXAMPLE_CONFIG to stop doing this.")
 	}
 
 	readCredsFile() // TODO: refactor to some config system
@@ -87,7 +89,7 @@ func init() {
 func main() {
 	err := redis.Ping()
 	if err != nil {
-		fmt.Printf("Error pinging redis: %s\n", err)
+		glog.Errorf("Error pinging redis: %s\n", err)
 		return
 	}
 
@@ -101,20 +103,20 @@ func main() {
 	// k8s connect
 	k8sconfig, err := rest.InClusterConfig()
 	if err != nil {
-		log.Printf("%s running in k8s", nodeName)
+		glog.Infof("%s running in k8s", nodeName)
 		runningInK8s = true
 	} else {
 		runningInK8s = false
-		log.Printf("%s not running in k8s. Config err: %s", nodeName, err)
+		glog.Infof("%s not running in k8s. Config err: %s", nodeName, err)
 	}
 
 	if runningInK8s {
 		k8sclientset, err := kubernetes.NewForConfig(k8sconfig)
 		if err != nil {
-			log.Printf("%s clientset error: %s", nodeName, err)
+			glog.Errorf("%s clientset error: %s", nodeName, err)
 		}
 		for !amIMaster(*k8sclientset) {
-			log.Printf("%s, I am not master. Sleeping", nodeName)
+			glog.Errorf("%s, I am not master. Sleeping", nodeName)
 			time.Sleep(time.Second)
 		}
 	}
@@ -122,12 +124,12 @@ func main() {
 	// initialize a slack server chan for each server
 	for _, server := range slackServers {
 		if *debug {
-			log.Printf("Creating server named %s \n", server.Name)
+			glog.Infof("Creating server named %s \n", server.Name)
 		}
 		currentSlackAPI := slack.New(server.APIKey)
 		authTest, err := currentSlackAPI.AuthTest()
 		if err != nil {
-			fmt.Printf("Error in auth: %s\n", err)
+			glog.Infof("Error in auth: %s\n", err)
 			return
 		}
 		// start the server manager
@@ -137,21 +139,21 @@ func main() {
 	code := <-stopChan
 	sigInt, err := strconv.Atoi(code.String())
 	if err != nil {
-		log.Println(au.Red("Err getting the singal int value"))
+		glog.Errorf("Err getting the singal int value")
 	}
-	log.Println(au.Green("Stopping cluebatbot"))
-	redis.Delete("cluster-id-master")
+	glog.Info("Stopping cluebatbot")
+	glog.Flush()
 	os.Exit(sigInt)
 }
 
 func amIMaster(k8sclientset kubernetes.Clientset) bool {
 	pods, err := k8sclientset.CoreV1().Pods("").List(metav1.ListOptions{})
 	if err != nil {
-		log.Printf("%s not running in k8s. Clientset err: %s", nodeName, err)
+		glog.Infof("%s not running in k8s. Clientset err: %s", nodeName, err)
 	}
 	fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
 	for pod := range pods.Items {
-		log.Printf("%v", pod)
+		glog.Infof("%v", pod)
 	}
 	return false
 }
@@ -167,7 +169,7 @@ func readCredsFile() {
 		die("failed read slack sever json", err)
 	}
 	if *debug {
-		log.Println(fmt.Sprintf("SlackServers Structs: \n%#v", slackServers))
+		glog.Infof("SlackServers Structs: \n%#v", slackServers)
 	}
 
 }
@@ -185,13 +187,12 @@ func writeExampleCredsFile() {
 	if err != nil {
 		die("failed to create json for example config", err)
 	}
-	n2, err := f.Write([]byte(jsonData))
+	_, err = f.Write([]byte(jsonData))
 	if err != nil {
 		die("failed to write to example config", err)
 	}
-	fmt.Printf("wrote %d bytes\n", n2)
 }
 
 func die(msg string, err error) {
-	log.Fatalln(au.Red(msg), au.Cyan(err))
+	glog.Fatalln(au.Red(msg), au.Cyan(err))
 }

@@ -28,7 +28,7 @@ spec:
         - name: "REDIS_HOST"
           value: 'redis.dorkbot.svc.cluster.local:6379'
         - name: "CSLACK_DEBUG"
-          value: 'false'
+          value: 'true'
         - name: MY_POD_NAME
           valueFrom:
             fieldRef:

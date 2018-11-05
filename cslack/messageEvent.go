@@ -2,20 +2,20 @@ package cslack
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/nlopes/slack"
 )
 
 // HandleSlackMessageEvent is the entry point to messageEvent for message handling. From here,
 // messages are evaluated as commands or a message of the type we can respond to
-func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slack.Client, server SlackServer, msgStack *ItemRefStack) {
+func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slack.Client, server SlackServer) {
 	if *debugCSlack {
-		log.Println("handling event for msg: ", ev.Msg)
+		glog.Infof("handling event for msg: %v", ev.Msg)
 	}
 	tehmsg := ev.Msg.Text
 	tehmsgTokens := strings.Split(tehmsg, " ")
@@ -33,15 +33,15 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 	switch cmd {
 	case "ping":
 		if *debugCSlack {
-			log.Println(server.Name + " someone " + ev.Name + " pinged me bro " + ev.Type)
-			channelID, _, err := sendSlackMessage(ev, "pong", ev.Channel, slackAPI, server, msgStack)
+			glog.Infof("%s someone named %s pinged me bro. Type: %s", server.Name, ev.Name, ev.Type)
+			channelID, _, err := sendSlackMessage(ev, "pong", ev.Channel, slackAPI, server)
 			if err != nil {
-				log.Printf("%s got error: \"%s\" sending to %s", server.Name, err, channelID)
+				glog.Errorf("%s got error: \"%s\" sending to %s", server.Name, err, channelID)
 			}
 		}
 	case "bat":
 		if *debugCSlack {
-			log.Printf("%s got clue for %s\ncmd: %s object: %s predicate: %s", server.Name, tehmsgTokens[1], cmd, object, predicate)
+			glog.Infof("%s got clue for %s\ncmd: %s object: %s predicate: %s", server.Name, tehmsgTokens[1], cmd, object, predicate)
 			//apply security
 			// TODO: needs to be a redis kept list
 			if ev.User != server.OwnerID {
@@ -53,7 +53,7 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 			userString = strings.Trim(userString, ">")
 			user, err := slackAPI.GetUserInfo(userString)
 			if err != nil {
-				log.Printf("%s error for user %s lookup %s", server.Name, userString, err)
+				glog.Errorf("%s error for user %s lookup %s", server.Name, userString, err)
 				//return
 			}
 			// TODO: conversations is what we want here
@@ -61,11 +61,11 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 			params := slack.GetConversationsForUserParameters{UserID: userString, Cursor: cursor, Types: []string{"public_channel", "private_channel"}, Limit: 100}
 			members, cursor, err := slackAPI.GetConversationsForUser(&params)
 			if err != nil {
-				log.Printf("%s error getting conversations for %s was %s", server.Name, userString, err)
+				glog.Errorf("%s error getting conversations for %s was %s", server.Name, userString, err)
 				return
 			}
 			if len(members) == 0 {
-				log.Printf("%s %s has no conversations I can find. Harassment failure", server.Name, userString)
+				glog.Infof("%s %s has no conversations I can find. Harassment failure", server.Name, userString)
 				return
 			}
 
@@ -74,47 +74,47 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 			randomChannelIndex := r.Intn((len(members) - 1))
 			for i, member := range members {
 				if *debugCSlack {
-					log.Printf("%s %d member %v", server.Name, i, member)
+					glog.Infof("%s %d member %v", server.Name, i, member)
 				}
 				if randomChannelIndex == i && (member.Name != "announcements") {
 					if *debugCSlack {
-						log.Printf("%s found %s to harass %s in", server.Name, member.ID, userString)
+						glog.Infof("%s found %s to harass %s in", server.Name, member.ID, userString)
 					}
 					_, err := slackAPI.JoinChannel(member.Name)
 					if err != nil {
-						log.Printf("%s error joining channel %s to harass user %s: %s", server.Name, member.Name, userString, err)
+						glog.Errorf("%s error joining channel %s to harass user %s: %s", server.Name, member.Name, userString, err)
 						//return
 					}
 					//send message to random channel
-					_, timestamp, err := sendSlackMessage(ev, clueBatMessage(*user, ""), member.ID, slackAPI, server, msgStack)
+					_, timestamp, err := sendSlackMessage(ev, clueBatMessage(*user, ""), member.ID, slackAPI, server)
 					if err != nil {
-						log.Printf("%s error harassing %s in random channel %s - %s: %s", server.Name, userString, member.ID, member.Name, err)
+						glog.Errorf("%s error harassing %s in random channel %s - %s: %s", server.Name, userString, member.ID, member.Name, err)
 					}
 					timeInSeconds, err := strconv.ParseInt(timestamp, 10, 64)
 					if err != nil {
-						log.Printf("%s error converting %s to int for time conversion. Setting time to Time.now(). Will be wrong. Err is %s", server.Name, timestamp, err)
+						glog.Errorf("%s error converting %s to int for time conversion. Setting time to Time.now(). Will be wrong. Err is %s", server.Name, timestamp, err)
 					}
 					timeFromUnix := time.Unix(timeInSeconds, 0)
 					msg := fmt.Sprintf("sent <@%s> a cluebat message in <#%s> at %s\n If you join right away, they'll totally know it was you. <GRIN>", user.ID, member.ID, timeFromUnix.String())
-					_, _, err = sendSlackMessage(ev, msg, ev.Channel, slackAPI, server, msgStack)
+					_, _, err = sendSlackMessage(ev, msg, ev.Channel, slackAPI, server)
 					if err != nil {
-						log.Printf("%s error harassing %s in random channel %s - %s: %s", server.Name, userString, member.ID, member.Name, err)
+						glog.Errorf("%s error harassing %s in random channel %s - %s: %s", server.Name, userString, member.ID, member.Name, err)
 					}
 					//leave random channel
 					_, err = slackAPI.LeaveChannel(member.Name)
 					if err != nil {
-						log.Printf("%s error leaving channel %s - %s while harassing %s: %s", server.Name, member.ID, member.Name, userString, err)
+						glog.Errorf("%s error leaving channel %s - %s while harassing %s: %s", server.Name, member.ID, member.Name, userString, err)
 					}
-					log.Printf("A cluebat was sent on %s to %s by %s in %s at %s",
+					glog.Infof("A cluebat was sent on %s to %s by %s in %s at %s",
 						server.Name, user.Name, ev.Name, member.Name, timeFromUnix.String())
 				}
 			}
 		}
 	case "help":
 		useage := "send a message to cluebatbot in any channel (or by DM, hint hint) of the form `bat @user`.\nCluebatbot will find a random channel then hit @user with a cluebat in it. @user will never see it coming"
-		_, _, err := sendSlackMessage(ev, useage, ev.Channel, slackAPI, server, msgStack)
+		_, _, err := sendSlackMessage(ev, useage, ev.Channel, slackAPI, server)
 		if err != nil {
-			log.Printf("%s error sending help in channel %s", server.Name, ev.Channel)
+			glog.Errorf("%s error sending help in channel %s", server.Name, ev.Channel)
 		}
 	case "img":
 		attachment := slack.Attachment{
@@ -131,24 +131,23 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 		msgOptionAttachments := slack.MsgOptionAttachments(attachment)
 		channelID, timestamp, err := slackAPI.PostMessage(ev.Channel, msgOptionAttachments, slack.MsgOptionText("", false))
 		if err != nil {
-			log.Printf("%s error sending to %s is %s\n", server.Name, ev.Channel, err)
+			glog.Errorf("%s error sending to %s is %s\n", server.Name, ev.Channel, err)
 		}
 		if *debugCSlack {
-			log.Printf("%s sent img attachment to channelID: %s at %s", server, channelID, timestamp)
+			glog.Infof("%s sent img attachment to channelID: %s at %s", server, channelID, timestamp)
 		}
-		msgStack.Push(slack.NewRefToMessage(channelID, timestamp))
 	case "die":
 		if *debugCSlack {
-			log.Fatalln(server.Name + " got die")
+			glog.Fatalln(server.Name + " got die")
 		}
 	default:
 		if *debugCSlack {
-			log.Println(server.Name+" ignoring:", tehmsg)
+			glog.Infof(server.Name+" ignoring:", tehmsg)
 		}
 	}
 }
 
-func sendSlackMessage(ev slack.MessageEvent, msg string, chanTo string, slackAPI slack.Client, server SlackServer, msgStack *ItemRefStack) (string, string, error) {
+func sendSlackMessage(ev slack.MessageEvent, msg string, chanTo string, slackAPI slack.Client, server SlackServer) (string, string, error) {
 	params := slack.PostMessageParameters{}
 	params.Channel = chanTo
 	params.User = botID
@@ -163,12 +162,11 @@ func sendSlackMessage(ev slack.MessageEvent, msg string, chanTo string, slackAPI
 	// params.Attachments = []slack.Attachment{attachment}
 	channelID, timestamp, err := slackAPI.PostMessage(chanTo, slack.MsgOptionText(msg, false), slack.MsgOptionPostMessageParameters(params))
 	if err != nil {
-		log.Printf("%s error sending to %s is %s with params: %v\n", server.Name, chanTo, err, params)
+		glog.Errorf("%s error sending to %s is %s with params: %v\n", server.Name, chanTo, err, params)
 	}
 	if *debugCSlack {
-		log.Printf("%s sent %s to channelID: %s at %s", server, msg, channelID, timestamp)
+		glog.Infof("%s sent %s to channelID: %s at %s", server, msg, channelID, timestamp)
 	}
-	msgStack.Push(slack.NewRefToMessage(channelID, timestamp))
 	return channelID, timestamp, err
 }
 
