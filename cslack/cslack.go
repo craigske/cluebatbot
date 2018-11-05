@@ -73,7 +73,7 @@ func getSlackUsers(slackAPI *slack.Client, server SlackServer) {
 			redis.Set(server.Name+"-user-"+user.ID, []byte(stringUser))
 		}
 	}
-	log.Printf("added %d users\n", counter)
+	log.Printf("%s added %d users\n", server.Name, counter)
 }
 
 func getSlackChannels(slackAPI *slack.Client, server SlackServer) {
@@ -99,7 +99,7 @@ func getSlackChannels(slackAPI *slack.Client, server SlackServer) {
 			redis.Set(server.Name+"-channel-"+channel.ID, []byte(stringChannel))
 		}
 	}
-	log.Printf("added %d channels\n", counter)
+	log.Printf("%s added %d channels\n", server.Name, counter)
 }
 
 func handleSlackEvents(msg slack.RTMEvent, rtm slack.RTM, slackAPI slack.Client, server SlackServer, msgStack *ItemRefStack) {

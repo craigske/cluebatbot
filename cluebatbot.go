@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"strconv"
@@ -16,9 +17,11 @@ import (
 	"./redis"
 	"github.com/logrusorgru/aurora"
 	"github.com/nlopes/slack"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
-/* imported types we'll need */
 // User maps slack.User
 type User slack.User
 
@@ -34,37 +37,33 @@ type Channels []slack.Channel
 // SlackServer the cslack SlackServer type
 type SlackServer cslack.SlackServer
 
-/* Globals */
-var credsFile = "./cluebatbot-config.json" // set in init. Future refactor for external creds
+// flags
 var debug = flag.Bool("debug", true, "enable or disable debug")
 var verbose = flag.Bool("verbose", false, "enable or disable verbose logging")
 var colors = flag.Bool("colors", true, "enable or disable colors")
+var serviceDNS = flag.String("port", "2000", "app port")
+var port = flag.String("serviceDNS", "localhost", "app service DNS name")
+var credsFile = flag.String("credsFile", "./cluebatbot-config.json", "credentials file")
+var makeMasterOnError = flag.Bool("makeMasterOnError", false, "make this node master if unable to connect to the cluster ip provided.")
+
+// Globals
 var stopChan = make(chan os.Signal, 2)
 var au aurora.Aurora
 var tickCounter = 0
 var users Users
 var channels Channels
 var slackServers []cslack.SlackServer
-var podID string
-var podName string
+var runningInK8s bool
+var nodeName string
 
 func init() {
-	au = aurora.NewAurora(*colors)
 	fmt.Println("INIT ClueBatBot")
+	au = aurora.NewAurora(*colors)
 
 	writeConfig := os.Getenv("WRITE_EXAMPLE_CONFIG")
 	if writeConfig == "true" {
 		writeExampleCredsFile()
 		log.Fatalln("Wrote example config. Unset WRITE_EXAMPLE_CONFIG to stop doing this.")
-	}
-
-	podID = os.Getenv("MY_POD_IP")
-	if podID == "" {
-		podID = string(os.Getpid())
-	}
-	podName = os.Getenv("MY_POD_NAME")
-	if podName == "" {
-		podName = string(os.Getpid())
 	}
 
 	readCredsFile() // TODO: refactor to some config system
@@ -73,6 +72,14 @@ func init() {
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
 		redisHost = "localhost:6379"
+	}
+
+	nodeName = os.Getenv("MY_POD_NAME")
+	if len(nodeName) == 0 {
+		rand.Seed(time.Now().UnixNano())
+		nodeName = string(rand.Uint32())
+	} else {
+		runningInK8s = true
 	}
 }
 
@@ -91,54 +98,66 @@ func main() {
 		syscall.SIGTERM,
 		syscall.SIGQUIT)
 
-	// am i master or hot spare?
-	for {
-		if amIMaster() {
-			// initialize a slack server chan for each server
-			for _, server := range slackServers {
-				if *debug {
-					log.Printf("Creating server named %s \n", server.Name)
-				}
-				currentSlackAPI := slack.New(server.APIKey)
-				authTest, err := currentSlackAPI.AuthTest()
-				if err != nil {
-					fmt.Printf("Error in auth: %s\n", err)
-					return
-				}
-				// start the server manager
-				go cslack.SlackServerManager(currentSlackAPI, server, authTest.UserID, authTest.TeamID)
-			}
-			code := <-stopChan
-			sigInt, err := strconv.Atoi(code.String())
-			if err != nil {
-				log.Println(au.Red("Err getting the singal int value"))
-			}
-			log.Println(au.Green("Stopping cluebatbot"))
-			redis.Delete("cluster-id-master")
-			os.Exit(sigInt)
-		} else {
-			log.Printf("I %s am not master, waiting...", podID+podName)
-			time.Sleep(time.Minute)
+	// k8s connect
+	k8sconfig, err := rest.InClusterConfig()
+	if err != nil {
+		log.Printf("%s running in k8s", nodeName)
+		runningInK8s = true
+	} else {
+		runningInK8s = false
+		log.Printf("%s not running in k8s. Config err: %s", nodeName, err)
+	}
+
+	if runningInK8s {
+		k8sclientset, err := kubernetes.NewForConfig(k8sconfig)
+		if err != nil {
+			log.Printf("%s clientset error: %s", nodeName, err)
+		}
+		for !amIMaster(*k8sclientset) {
+			log.Printf("%s, I am not master. Sleeping", nodeName)
+			time.Sleep(time.Second)
 		}
 	}
+
+	// initialize a slack server chan for each server
+	for _, server := range slackServers {
+		if *debug {
+			log.Printf("Creating server named %s \n", server.Name)
+		}
+		currentSlackAPI := slack.New(server.APIKey)
+		authTest, err := currentSlackAPI.AuthTest()
+		if err != nil {
+			fmt.Printf("Error in auth: %s\n", err)
+			return
+		}
+		// start the server manager
+		go cslack.SlackServerManager(currentSlackAPI, server, authTest.UserID, authTest.TeamID)
+	}
+
+	code := <-stopChan
+	sigInt, err := strconv.Atoi(code.String())
+	if err != nil {
+		log.Println(au.Red("Err getting the singal int value"))
+	}
+	log.Println(au.Green("Stopping cluebatbot"))
+	redis.Delete("cluster-id-master")
+	os.Exit(sigInt)
 }
 
-func amIMaster() bool {
-	myID := podID + podName
-	master, err := redis.Get("cluster-id-master")
+func amIMaster(k8sclientset kubernetes.Clientset) bool {
+	pods, err := k8sclientset.CoreV1().Pods("").List(metav1.ListOptions{})
 	if err != nil {
-		log.Printf("amIMaster redis Exists Err: %v", err)
+		log.Printf("%s not running in k8s. Clientset err: %s", nodeName, err)
 	}
-	if string(master) != myID {
-		log.Printf("I %s am master", myID)
-		redis.Set("cluster-id-master", []byte(myID))
-		return true
+	fmt.Printf("There are %d pods in the cluster\n", len(pods.Items))
+	for pod := range pods.Items {
+		log.Printf("%v", pod)
 	}
 	return false
 }
 
 func readCredsFile() {
-	data, err := ioutil.ReadFile(credsFile)
+	data, err := ioutil.ReadFile(*credsFile)
 	if err != nil {
 		die("failed to open the creds file", err)
 	}

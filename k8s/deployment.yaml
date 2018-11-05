@@ -12,7 +12,7 @@ metadata:
   labels:
     app: "cluebatbot"
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: "cluebatbot"
@@ -28,7 +28,7 @@ spec:
         - name: "REDIS_HOST"
           value: 'redis.dorkbot.svc.cluster.local:6379'
         - name: "CSLACK_DEBUG"
-          value: 'true'
+          value: 'false'
         - name: MY_POD_NAME
           valueFrom:
             fieldRef:
@@ -58,6 +58,6 @@ spec:
     kind: "Deployment"
     name: "cluebatbot"
     apiVersion: "apps/v1beta1"
-  minReplicas: 3
-  maxReplicas: 3
+  minReplicas: 1
+  maxReplicas: 1
   targetCPUUtilizationPercentage: 80
