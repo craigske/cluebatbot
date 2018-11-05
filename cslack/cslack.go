@@ -143,9 +143,9 @@ func handleSlackEvents(msg slack.RTMEvent, rtm slack.RTM, slackAPI slack.Client,
 
 func handleLatency(latency time.Duration, server SlackServer) {
 	// report only high latency
-	var latencyThreshold int64 = 10000
-	if int64(latency) > latencyThreshold {
-		glog.Errorf("%s latency over threshold: %s", server.Name, latency)
+	var latencyThreshold = time.Duration(1 * time.Second)
+	if int64(latency) > int64(latencyThreshold) {
+		glog.Errorf("%s latency over threshold(%s): %s", server.Name, latencyThreshold, latency)
 	}
 	latencySlice = append(latencySlice, latency.Nanoseconds())
 	if latencyCounter%100 == 0 {
@@ -163,6 +163,7 @@ func handleLatency(latency time.Duration, server SlackServer) {
 		key := server.Name + "-latency-" + string(jsonNow)
 		jsonLatency := string(avg)
 		redis.Set(key, []byte(jsonLatency))
+		glog.Infof("%s avg latency now %s", server.Name, time.Duration(avg))
 	}
 	latencyCounter++
 	glog.Flush()
