@@ -26,7 +26,7 @@ spec:
       containers:
       - env:
         - name: REDIS_HOST
-          value: redis.dorkbot.svc.cluster.local:6379
+          value: "redis.dorkbot.svc.cluster.local:6379"
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: /etc/config/google.creds
         - name: CSLACK_DEBUG

@@ -32,7 +32,7 @@ func handleLatency(latency time.Duration, server *SlackServer) {
 		if err != nil {
 			glog.Error("time conversion error: " + err.Error())
 		}
-		key := server.Name + "-latency-" + string(jsonNow)
+		key := server.Name + ":latency:" + string(jsonNow)
 		jsonLatency := string(avg)
 		redis.Set(key, []byte(jsonLatency))
 		glog.Infof("%s avg latency now %s", server.Name, time.Duration(avg))
