@@ -13,3 +13,4 @@
 
 # do not store the config
 cluebatbot-config.json
+k8s/configmap.yaml

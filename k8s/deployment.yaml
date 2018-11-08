@@ -1,63 +1,83 @@
----
-apiVersion: "v1"
-kind: "Namespace"
+apiVersion: extensions/v1beta1
+kind: Deployment
 metadata:
-  name: "cluebatbot"
----
-apiVersion: "extensions/v1beta1"
-kind: "Deployment"
-metadata:
-  name: "cluebatbot"
-  namespace: "cluebatbot"
   labels:
-    app: "cluebatbot"
+    app: cluebatbot
+  name: cluebatbot
+  namespace: cluebatbot
 spec:
+  progressDeadlineSeconds: 600
   replicas: 1
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: "cluebatbot"
+      app: cluebatbot
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
   template:
     metadata:
+      creationTimestamp: null
       labels:
-        app: "cluebatbot"
+        app: cluebatbot
     spec:
       containers:
-      - name: "cluebatbot"
-        image: "gcr.io/craigskelton-com/cluebatbot:latest"
-        env:
-        - name: "REDIS_HOST"
-          value: 'redis.dorkbot.svc.cluster.local:6379'
-        - name: "CSLACK_DEBUG"
-          value: 'true'
+      - env:
+        - name: REDIS_HOST
+          value: redis.dorkbot.svc.cluster.local:6379
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /etc/config/google.creds
+        - name: CSLACK_DEBUG
+          valueFrom:
+            configMapKeyRef:
+              key: cslack_debug
+              name: cluebatbot-config
+        - name: CSLACK_DEBUG_LATENCY_TICK
+          valueFrom:
+            configMapKeyRef:
+              key: cslack_latency_debug
+              name: cluebatbot-config
         - name: MY_POD_NAME
           valueFrom:
             fieldRef:
+              apiVersion: v1
               fieldPath: metadata.name
         - name: MY_POD_NAMESPACE
           valueFrom:
             fieldRef:
+              apiVersion: v1
               fieldPath: metadata.namespace
         - name: MY_POD_IP
           valueFrom:
             fieldRef:
+              apiVersion: v1
               fieldPath: status.podIP
         - name: MY_POD_SERVICE_ACCOUNT
           valueFrom:
             fieldRef:
+              apiVersion: v1
               fieldPath: spec.serviceAccountName
----
-apiVersion: "autoscaling/v1"
-kind: "HorizontalPodAutoscaler"
-metadata:
-  name: "cluebatbot-hpa"
-  namespace: "cluebatbot"
-  labels:
-    app: "cluebatbot"
-spec:
-  scaleTargetRef:
-    kind: "Deployment"
-    name: "cluebatbot"
-    apiVersion: "apps/v1beta1"
-  minReplicas: 1
-  maxReplicas: 1
-  targetCPUUtilizationPercentage: 80
+        image: gcr.io/craigskelton-com/cluebatbot:11-07-2018-19-51-37
+        imagePullPolicy: Always
+        name: cluebatbot
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/config
+          name: goog-app-creds-volume
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: goog_app_creds
+            path: google.creds
+          name: cluebatbot-config
+        name: goog-app-creds-volume

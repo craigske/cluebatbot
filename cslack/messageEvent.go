@@ -13,7 +13,7 @@ import (
 
 // HandleSlackMessageEvent is the entry point to messageEvent for message handling. From here,
 // messages are evaluated as commands or a message of the type we can respond to
-func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slack.Client, server SlackServer) {
+func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slack.Client, server *SlackServer) {
 	if *debugCSlack {
 		glog.Infof("handling event for msg: %v", ev.Msg)
 	}
@@ -31,15 +31,16 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 		predicate = fmt.Sprintf("%v", tehmsgTokens[2:])
 	}
 	switch cmd {
-	case "ping":
+	case "ping", "Ping":
 		if *debugCSlack {
-			glog.Infof("%s someone named %s pinged me bro. Type: %s", server.Name, ev.Name, ev.Type)
-			channelID, _, err := sendSlackMessage(ev, "pong", ev.Channel, slackAPI, server)
-			if err != nil {
-				glog.Errorf("%s got error: \"%s\" sending to %s", server.Name, err, channelID)
-			}
+			user := server.Users[ev.User]
+			glog.Infof("%s someone named %s pinged me bro. Type: %s", server.Name, user.Name, ev.Type)
 		}
-	case "bat":
+		channelID, _, err := sendSlackMessage(ev, "pong", ev.Channel, slackAPI, server)
+		if err != nil {
+			glog.Errorf("%s got error: \"%s\" sending to %s", server.Name, err, channelID)
+		}
+	case "bat", "Bat":
 		if *debugCSlack {
 			glog.Infof("%s got clue for %s\ncmd: %s object: %s predicate: %s", server.Name, tehmsgTokens[1], cmd, object, predicate)
 			//apply security
@@ -51,11 +52,7 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 			//user, err := slackAPI.GetUserInfo(object)
 			userString := strings.Trim(object, "<@")
 			userString = strings.Trim(userString, ">")
-			user, err := slackAPI.GetUserInfo(userString)
-			if err != nil {
-				glog.Errorf("%s error for user %s lookup %s", server.Name, userString, err)
-				//return
-			}
+			user := server.Users[userString]
 			// TODO: conversations is what we want here
 			var cursor string
 			params := slack.GetConversationsForUserParameters{UserID: userString, Cursor: cursor, Types: []string{"public_channel", "private_channel"}, Limit: 100}
@@ -86,7 +83,7 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 						//return
 					}
 					//send message to random channel
-					_, timestamp, err := sendSlackMessage(ev, clueBatMessage(*user, ""), member.ID, slackAPI, server)
+					_, timestamp, err := sendSlackMessage(ev, clueBatMessage(user, ""), member.ID, slackAPI, server)
 					if err != nil {
 						glog.Errorf("%s error harassing %s in random channel %s - %s: %s", server.Name, userString, member.ID, member.Name, err)
 					}
@@ -134,7 +131,7 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 			glog.Errorf("%s error sending to %s is %s\n", server.Name, ev.Channel, err)
 		}
 		if *debugCSlack {
-			glog.Infof("%s sent img attachment to channelID: %s at %s", server, channelID, timestamp)
+			glog.Infof("%s sent img attachment to channelID: %s at %s", server.Name, channelID, timestamp)
 		}
 	case "die":
 		if *debugCSlack {
@@ -147,7 +144,7 @@ func HandleSlackMessageEvent(ev slack.MessageEvent, rtm slack.RTM, slackAPI slac
 	}
 }
 
-func sendSlackMessage(ev slack.MessageEvent, msg string, chanTo string, slackAPI slack.Client, server SlackServer) (string, string, error) {
+func sendSlackMessage(ev slack.MessageEvent, msg string, chanTo string, slackAPI slack.Client, server *SlackServer) (string, string, error) {
 	params := slack.PostMessageParameters{}
 	params.Channel = chanTo
 	params.User = botID
@@ -165,7 +162,7 @@ func sendSlackMessage(ev slack.MessageEvent, msg string, chanTo string, slackAPI
 		glog.Errorf("%s error sending to %s is %s with params: %v\n", server.Name, chanTo, err, params)
 	}
 	if *debugCSlack {
-		glog.Infof("%s sent %s to channelID: %s at %s", server, msg, channelID, timestamp)
+		glog.Infof("%s sent %s to channelID: %s at %s", server.Name, msg, channelID, timestamp)
 	}
 	return channelID, timestamp, err
 }
