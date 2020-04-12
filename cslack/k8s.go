@@ -35,6 +35,7 @@ func ConnectToGoogleCloudAPI() bool {
 
 // GetK8sPodInfo creates the in-cluster config
 func GetK8sPodInfo() {
+	ctx := context.Background()
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		glog.Errorln(err.Error())
@@ -44,7 +45,7 @@ func GetK8sPodInfo() {
 		if err != nil {
 			glog.Errorln(err.Error())
 		} else {
-			pods, err := clientset.CoreV1().Pods("cluebatbot").List(metav1.ListOptions{})
+			pods, err := clientset.CoreV1().Pods("cluebatbot").List(ctx, metav1.ListOptions{})
 			if err != nil {
 				glog.Errorln(err.Error())
 			}
@@ -52,7 +53,7 @@ func GetK8sPodInfo() {
 			// Examples for error handling:
 			// - Use helper functions like e.g. errors.IsNotFound()
 			// - And/or cast to StatusError and use its properties like e.g. ErrStatus.Message
-			_, err = clientset.CoreV1().Pods("cluebatbot").Get("*", metav1.GetOptions{})
+			_, err = clientset.CoreV1().Pods("cluebatbot").Get(ctx, "*", metav1.GetOptions{})
 			if errors.IsNotFound(err) {
 				glog.Infof("Pod not found\n")
 			} else if statusError, isStatus := err.(*errors.StatusError); isStatus {

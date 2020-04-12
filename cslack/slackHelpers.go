@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"../redis"
+	"github.com/craigske/cluebatbot/redis_wrapper"
 	"github.com/golang/glog"
 	"github.com/nlopes/slack"
 )
@@ -24,13 +24,13 @@ func getSlackUsers(slackAPI *slack.Client, server *SlackServer) {
 		//add to map
 		server.Users[user.ID] = user
 		// Already in redis?
-		exists, err := redis.Exists(server.Name + ":user:" + user.ID)
+		exists, err := redis_wrapper.Exists(server.Name + ":user:" + user.ID)
 		if err != nil {
 			glog.Errorf("%s redis Exists Err", server.Name)
 		}
 		if !exists {
 			stringUser := fmt.Sprintf("%#v", user)
-			redis.Set(server.Name+":user:"+user.ID, []byte(stringUser))
+			redis_wrapper.Set(server.Name+":user:"+user.ID, []byte(stringUser))
 		}
 	}
 	glog.Infof("%s added %d users\n", server.Name, counter)
@@ -50,13 +50,13 @@ func getSlackChannels(slackAPI *slack.Client, server *SlackServer) {
 		}
 		server.Channels[channel.ID] = channel
 		// Already in redis?
-		exists, err := redis.Exists(server.Name + ":channel:" + channel.ID)
+		exists, err := redis_wrapper.Exists(server.Name + ":channel:" + channel.ID)
 		if err != nil {
 			glog.Errorf("%s redis Exists Err", server.Name)
 		}
 		if !exists {
 			stringChannel := fmt.Sprintf("%#v", channel)
-			redis.Set(server.Name+":channel:"+channel.ID, []byte(stringChannel))
+			redis_wrapper.Set(server.Name+":channel:"+channel.ID, []byte(stringChannel))
 		}
 	}
 	glog.Infof("%s added %d channels\n", server.Name, counter)

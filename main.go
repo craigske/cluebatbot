@@ -12,14 +12,14 @@ import (
 	"syscall"
 	"time"
 
-	"./cslack"
-	"./redis"
+	"github.com/craigske/cluebatbot/cslack"
+	"github.com/craigske/cluebatbot/redis_wrapper"
 	"github.com/golang/glog"
 	"github.com/logrusorgru/aurora"
 	"github.com/nlopes/slack"
 
-	// may be required later for google API auth
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	// // may be required later for google API auth
+	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
 // User maps slack.User
@@ -86,7 +86,7 @@ func init() {
 
 /* MAIN */
 func main() {
-	err := redis.Ping()
+	err := redis_wrapper.Ping()
 	if err != nil {
 		glog.Errorf("Error pinging redis: %s\n", err)
 		return

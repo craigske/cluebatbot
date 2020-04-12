@@ -3,7 +3,7 @@ package cslack
 import (
 	"time"
 
-	"../redis"
+	"github.com/craigske/cluebatbot/redis_wrapper"
 	"github.com/golang/glog"
 )
 
@@ -34,7 +34,7 @@ func handleLatency(latency time.Duration, server *SlackServer) {
 		}
 		key := server.Name + ":latency:" + string(jsonNow)
 		jsonLatency := string(avg)
-		redis.Set(key, []byte(jsonLatency))
+		redis_wrapper.Set(key, []byte(jsonLatency))
 		glog.Infof("%s avg latency now %s", server.Name, time.Duration(avg))
 		server.LatencyCounter = 0
 	} else {
