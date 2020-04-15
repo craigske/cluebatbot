@@ -4,7 +4,6 @@ mainmenu () {
   echo "Press 1 to build"
   echo "Press 2 to deploy"
   echo "Press 3/enter to run away screaming"
-  echo "Press 9 to nuke test. Make sure you're shure"
   read  -n 1 -p "Input Selection:" mainmenuinput
   echo
   if [ "$mainmenuinput" = "1" ]; then
@@ -35,5 +34,6 @@ deploy () {
 }
 
 while true; do
+    go mod download
     mainmenu
 done

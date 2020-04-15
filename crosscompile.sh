@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-# ./dep-windows-amd64 ensure -update
-dep ensure -update
-
 # env CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -installsuffix nocgo -o bin/cluebatbot.darwin .
 # echo "Built cluebatbot for mac"
 # env CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -a -installsuffix nocgo -o bin/cluebatbot.exe .
